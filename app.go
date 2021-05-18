@@ -1,10 +1,12 @@
 package twstclient
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -19,7 +21,7 @@ type App struct {
 	client          *Client
 	workerNum       int
 	params          url.Values
-	encoder         *json.Encoder
+	output          io.Writer
 	injectCreatedAt bool
 }
 
@@ -31,18 +33,18 @@ func New(config *Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	encoder := json.NewEncoder(config.Output)
 	app := &App{
 		client:          c,
 		workerNum:       config.WorkerNum,
 		params:          config.QueryParams,
-		encoder:         encoder,
+		output:          config.Output,
 		injectCreatedAt: config.InjectCreatedAt,
 	}
 	return app, nil
 }
 
 func (app *App) Run(ctx context.Context) error {
+	inputCh := make(chan string, app.workerNum*2)
 	tweetCh := make(chan string, app.workerNum*2)
 	errCh := make(chan error, app.workerNum*2)
 	var wg sync.WaitGroup
@@ -52,22 +54,30 @@ func (app *App) Run(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			log.Printf("[DEBUG] werker_id=%d start\n", workerID)
-			app.worker(tweetCh, errCh)
+			app.worker(inputCh, tweetCh, errCh)
 			log.Printf("[DEBUG] werker_id=%d end\n", workerID)
 		}()
 	}
-	wg.Add(1)
+	var rwg sync.WaitGroup
+	rwg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer rwg.Done()
 		log.Println("[DEBUG] start worker error reporter")
 		app.errorReporter(errCh)
 		log.Println("[DEBUG] end worker error reporter")
+	}()
+	rwg.Add(1)
+	go func() {
+		defer rwg.Done()
+		log.Println("[DEBUG] start tweet reporter")
+		app.tweetReporter(tweetCh)
+		log.Println("[DEBUG] end tweet reporter")
 	}()
 	done := false
 	var err error
 	for !done {
 		log.Println("[INFO] start mainloop")
-		err = app.mainLoop(ctx, tweetCh)
+		err = app.mainLoop(ctx, inputCh)
 		log.Println("[INFO] end mainloop")
 		if err != nil {
 			log.Printf("[ERROR] %s", err.Error())
@@ -83,9 +93,11 @@ func (app *App) Run(ctx context.Context) error {
 			time.Sleep(5 * time.Second)
 		}
 	}
+	close(inputCh)
+	wg.Wait()
 	close(tweetCh)
 	close(errCh)
-	wg.Wait()
+	rwg.Wait()
 	return err
 }
 
@@ -131,6 +143,17 @@ func (app *App) errorReporter(errCh <-chan error) {
 	}
 }
 
+func (app *App) tweetReporter(tweetCh <-chan string) {
+	for {
+		tweet, ok := <-tweetCh
+		if ok {
+			io.WriteString(app.output, tweet)
+		} else {
+			return
+		}
+	}
+}
+
 type respData struct {
 	Data          map[string]interface{} `json:"data,omitempty"`
 	MatchingRules interface{}            `json:"matching_rules,omitempty"`
@@ -138,14 +161,16 @@ type respData struct {
 	Errors        []json.RawMessage      `json:"errors,omitempty"`
 }
 
-func (app *App) worker(tweetCh <-chan string, errCh chan<- error) {
+func (app *App) worker(inputCh <-chan string, tweetCh chan<- string, errCh chan<- error) {
+	var buf bytes.Buffer
+	encoder := json.NewEncoder(&buf)
 	for {
-		tweet, ok := <-tweetCh
+		input, ok := <-inputCh
 		if !ok {
 			return
 		}
 		var data respData
-		decoder := json.NewDecoder(strings.NewReader(tweet))
+		decoder := json.NewDecoder(strings.NewReader(input))
 		if err := decoder.Decode(&data); err != nil {
 			errCh <- err
 			continue
@@ -161,10 +186,11 @@ func (app *App) worker(tweetCh <-chan string, errCh chan<- error) {
 				data.CreatedAt = createdAt
 			}
 		}
-		if err := app.encoder.Encode(data); err != nil {
+		if err := encoder.Encode(data); err != nil {
 			errCh <- err
 			continue
 		}
+		tweetCh <- buf.String()
 	}
 }
 
