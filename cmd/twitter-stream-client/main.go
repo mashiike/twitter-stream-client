@@ -50,7 +50,7 @@ func main() {
 	minLevel := InfoLevel
 	if debug {
 		minLevel = DebugLevel
-		log.SetFlags(log.Lshortfile)
+		log.SetFlags(log.Lshortfile | log.LstdFlags)
 	}
 	filter := &logutils.LevelFilter{
 		Levels:   []logutils.LogLevel{DebugLevel, InfoLevel, ErrorLevel},
