@@ -36,7 +36,7 @@ func NewClient(config *Config) (*Client, error) {
 func (c *Client) GetStream(ctx context.Context, params url.Values) (<-chan string, error) {
 	query := params.Encode()
 	endpoint := c.Endpoint + "?" + query
-	log.Printf("[debug] GET %s", endpoint)
+	log.Printf("[DEBUG] GET %s", endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -51,7 +51,7 @@ func (c *Client) GetStream(ctx context.Context, params url.Values) (<-chan strin
 		var err responseError
 		decoder := json.NewDecoder(resp.Body)
 		if err := decoder.Decode(&err); err != nil {
-			log.Printf("[error] response parse failed:%s", err.Error())
+			log.Printf("[ERROR] response parse failed:%s", err.Error())
 		}
 		err.StatusCode = resp.StatusCode
 		resp.Body.Close()
@@ -73,13 +73,13 @@ func newResponseChannel(body io.ReadCloser, bufferSize int) <-chan string {
 		scanner := bufio.NewScanner(body)
 		buf := make([]byte, startBufSize)
 		scanner.Buffer(buf, maxScanTokenSize)
-		log.Println("[debug] start response scan")
+		log.Println("[DEBUG] start response scan")
 		for scanner.Scan() {
 			str := scanner.Text()
-			log.Printf("[debug] receive `%s`\n", str)
+			log.Printf("[DEBUG] receive `%s`\n", str)
 			respCh <- str
 		}
-		log.Println("[debug] end response scan")
+		log.Println("[DEBUG] end response scan")
 		close(respCh)
 	}()
 	return respCh
@@ -97,7 +97,7 @@ type responseError struct {
 func (err *responseError) Error() string {
 	bs, e := json.Marshal(err)
 	if e != nil {
-		log.Printf("[error] response error mashal failed: %s\n", e.Error())
+		log.Printf("[ERROR] response error mashal failed: %s\n", e.Error())
 		return fmt.Sprintf("Status=%d Title=%s Type=%s Detail=%s", err.StatusCode, err.Title, err.Type, err.Detail)
 	}
 	return string(bs)

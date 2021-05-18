@@ -51,26 +51,26 @@ func (app *App) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			log.Printf("[debug] werker_id=%d start\n", workerID)
+			log.Printf("[DEBUG] werker_id=%d start\n", workerID)
 			app.worker(tweetCh, errCh)
-			log.Printf("[debug] werker_id=%d end\n", workerID)
+			log.Printf("[DEBUG] werker_id=%d end\n", workerID)
 		}()
 	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Println("[debug] start worker error reporter")
+		log.Println("[DEBUG] start worker error reporter")
 		app.errorReporter(errCh)
-		log.Println("[debug] end worker error reporter")
+		log.Println("[DEBUG] end worker error reporter")
 	}()
 	done := false
 	var err error
 	for !done {
-		log.Println("[info] start mainloop")
+		log.Println("[INFO] start mainloop")
 		err = app.mainLoop(ctx, tweetCh)
-		log.Println("[info] end mainloop")
+		log.Println("[INFO] end mainloop")
 		if err != nil {
-			log.Printf("[error] %s", err.Error())
+			log.Printf("[ERROR] %s", err.Error())
 			done = true
 			continue
 		}
@@ -79,7 +79,7 @@ func (app *App) Run(ctx context.Context) error {
 			done = true
 			continue
 		default:
-			log.Println("[info] 5 sec after try restart mainloop")
+			log.Println("[INFO] 5 sec after try restart mainloop")
 			time.Sleep(5 * time.Second)
 		}
 	}
@@ -94,14 +94,14 @@ func (app *App) mainLoop(ctx context.Context, tweetCh chan<- string) error {
 	if err != nil {
 		return err
 	}
-	log.Println("[info] connect success")
+	log.Println("[INFO] connect success")
 	for {
 		resp, ok := <-respCh
 		if !ok {
 			return nil
 		}
 		if len(resp) <= 0 {
-			log.Println("[debug] heartbeet")
+			log.Println("[DEBUG] heartbeet")
 			continue
 		}
 		tweetCh <- resp
@@ -112,7 +112,7 @@ func (app *App) errorReporter(errCh <-chan error) {
 	for {
 		err, ok := <-errCh
 		if ok {
-			log.Printf("[info] %s", err.Error())
+			log.Printf("[INFO] %s", err.Error())
 		} else {
 			return
 		}
@@ -159,7 +159,7 @@ func (app *App) worker(tweetCh <-chan string, errCh chan<- error) {
 func (app *App) getStream(ctx context.Context) (<-chan string, error) {
 	respCh, err := app.client.GetStream(ctx, app.params)
 	if err != nil {
-		log.Printf("[error] GetStream failed: %s\n", err.Error())
+		log.Printf("[ERROR] GetStream failed: %s\n", err.Error())
 		//https://developer.twitter.com/en/docs/twitter-api/tweets/filtered-stream/integrate/handling-disconnections
 		minInterval := 250 * time.Millisecond
 		maxInterval := 16 * time.Second
@@ -193,7 +193,7 @@ func (app *App) getStream(ctx context.Context) (<-chan string, error) {
 			if err == nil || errors.Unwrap(err) == context.Canceled || errors.Unwrap(err) == context.DeadlineExceeded {
 				return respCh, nil
 			}
-			log.Printf("[error] RetryCount=%d, GetStream failed: %s\n", i, err.Error())
+			log.Printf("[ERROR] RetryCount=%d, GetStream failed: %s\n", i, err.Error())
 		}
 		return nil, err
 	}

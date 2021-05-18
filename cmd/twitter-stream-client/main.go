@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	DebugLevel = "[debug]"
-	InfoLevel  = "[info]"
-	ErrorLevel = "[error]"
+	DebugLevel = "DEBUG"
+	InfoLevel  = "INFO"
+	ErrorLevel = "ERROR"
 )
 
 func main() {
@@ -82,7 +82,7 @@ func main() {
 
 	app, err := twstclient.New(config)
 	if err != nil {
-		log.Fatalf("[error] %s", err)
+		log.Fatalf("[ERROR] %s", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -91,7 +91,7 @@ func main() {
 		if unwrapedErr == context.Canceled || unwrapedErr == context.DeadlineExceeded {
 			return
 		}
-		log.Fatalf("[error] %s", err)
+		log.Fatalf("[ERROR] %s", err)
 	}
 
 }
