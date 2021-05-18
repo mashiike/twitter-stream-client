@@ -20,6 +20,8 @@ const (
 	ErrorLevel = "ERROR"
 )
 
+const maskedDefaultBearer = "*****************"
+
 func main() {
 	var (
 		bearer                                                                    string
@@ -28,7 +30,7 @@ func main() {
 		inject, debug                                                             bool
 	)
 	defaultToken := os.Getenv("TWITTER_BEARER_TOKEN")
-	flag.StringVar(&bearer, "bearer", defaultToken, "twitter v2 API bearer token")
+	flag.StringVar(&bearer, "bearer", maskedDefaultBearer, "twitter v2 API bearer token")
 	flag.IntVar(&workerNum, "werker", 5, "number of worker for stream processing")
 	flag.BoolVar(&inject, "inject-created-at", false, "inject tweet.created_at to the top level")
 	flag.BoolVar(&inject, "i", false, "alias of --inject-created-at flag")
@@ -42,6 +44,9 @@ func main() {
 	flag.StringVar(&userFields, "user-fields", "", "query parameters `user.fields`")
 	didumean.Parse()
 
+	if bearer == maskedDefaultBearer {
+		bearer = defaultToken
+	}
 	minLevel := InfoLevel
 	if debug {
 		minLevel = DebugLevel
