@@ -154,13 +154,6 @@ func (app *App) tweetReporter(tweetCh <-chan string) {
 	}
 }
 
-type respData struct {
-	Data          map[string]interface{} `json:"data,omitempty"`
-	MatchingRules interface{}            `json:"matching_rules,omitempty"`
-	CreatedAt     interface{}            `json:"created_at,omitempty"`
-	Errors        []json.RawMessage      `json:"errors,omitempty"`
-}
-
 func (app *App) worker(inputCh <-chan string, tweetCh chan<- string, errCh chan<- error) {
 	var buf bytes.Buffer
 	encoder := json.NewEncoder(&buf)
@@ -169,21 +162,32 @@ func (app *App) worker(inputCh <-chan string, tweetCh chan<- string, errCh chan<
 		if !ok {
 			return
 		}
-		var data respData
+		var data map[string]interface{}
 		decoder := json.NewDecoder(strings.NewReader(input))
 		if err := decoder.Decode(&data); err != nil {
 			errCh <- err
 			continue
 		}
-		if len(data.Errors) > 0 {
-			for _, err := range data.Errors {
+
+		if _, ok := data["errors"]; ok {
+			var errs struct {
+				Errors []json.RawMessage `json:"errors,omitempty"`
+			}
+			if err := json.NewDecoder(strings.NewReader(input)).Decode(&errs); err != nil {
+				errCh <- err
+			}
+			for _, err := range errs.Errors {
 				errCh <- fmt.Errorf("%s", string(err))
 			}
 			continue
 		}
 		if app.injectCreatedAt {
-			if createdAt, ok := data.Data["created_at"]; ok {
-				data.CreatedAt = createdAt
+			if tweet, ok := data["data"]; ok {
+				if tweet, ok := tweet.(map[string]interface{}); ok {
+					if createdAt, ok := tweet["created_at"]; ok {
+						data["created_at"] = createdAt
+					}
+				}
 			}
 		}
 		if err := encoder.Encode(data); err != nil {
