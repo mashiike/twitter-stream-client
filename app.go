@@ -95,16 +95,28 @@ func (app *App) mainLoop(ctx context.Context, tweetCh chan<- string) error {
 		return err
 	}
 	log.Println("[INFO] connect success")
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	heartbeatCount := 0
+	tweetCount := 0
 	for {
-		resp, ok := <-respCh
-		if !ok {
-			return nil
+		select {
+		case resp, ok := <-respCh:
+			if !ok {
+				return nil
+			}
+			if len(resp) <= 0 {
+				heartbeatCount++
+				log.Println("[DEBUG] heartbeat")
+				continue
+			}
+			tweetCount++
+			tweetCh <- resp
+		case <-ticker.C:
+			log.Printf("[INFO] in 5 Minute, HeartbeatCount=%d, TweetCount=%d", heartbeatCount, tweetCount)
+			heartbeatCount = 0
+			tweetCount = 0
 		}
-		if len(resp) <= 0 {
-			log.Println("[DEBUG] heartbeet")
-			continue
-		}
-		tweetCh <- resp
 	}
 }
 
