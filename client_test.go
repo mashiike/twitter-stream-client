@@ -42,7 +42,6 @@ func TestClient(t *testing.T) {
 			case <-ctx.Done():
 				return
 			default:
-				log.Println("fuga")
 				time.Sleep(20 * time.Millisecond)
 				io.WriteString(w, "\n")
 				flusher.Flush()
