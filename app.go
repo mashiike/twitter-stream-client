@@ -94,6 +94,8 @@ func (app *App) mainLoop(ctx context.Context, waitCh <-chan chan string) error {
 		select {
 		case resp, ok := <-respCh:
 			if !ok {
+				log.Printf("[INFO] on Disconnect, HeartbeatCount=%d, TweetCount=%d\n", heartbeatCount, tweetCount)
+				log.Println("[INFO] disconnect success")
 				return nil
 			}
 			if len(resp) <= 0 {
@@ -105,7 +107,7 @@ func (app *App) mainLoop(ctx context.Context, waitCh <-chan chan string) error {
 			tweetCh := <-waitCh
 			tweetCh <- resp
 		case <-ticker.C:
-			log.Printf("[INFO] in 5 Minute, HeartbeatCount=%d, TweetCount=%d", heartbeatCount, tweetCount)
+			log.Printf("[INFO] in 5 Minute, HeartbeatCount=%d, TweetCount=%d\n", heartbeatCount, tweetCount)
 			heartbeatCount = 0
 			tweetCount = 0
 		}

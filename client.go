@@ -73,13 +73,13 @@ func newResponseChannel(body io.ReadCloser, bufferSize int) <-chan string {
 		scanner := bufio.NewScanner(body)
 		buf := make([]byte, startBufSize)
 		scanner.Buffer(buf, maxScanTokenSize)
-		log.Println("[DEBUG] start response scan")
+		log.Println("[INFO] start response scan")
 		for scanner.Scan() {
 			str := scanner.Text()
 			log.Printf("[DEBUG] receive `%s`\n", str)
 			respCh <- str
 		}
-		log.Println("[DEBUG] end response scan")
+		log.Println("[INFO] end response scan")
 		close(respCh)
 	}()
 	return respCh
