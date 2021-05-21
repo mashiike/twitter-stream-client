@@ -90,7 +90,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("[ERROR] %s", err)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT, syscall.SIGQUIT)
 	defer stop()
 	if err := app.Run(ctx); err != nil {
 		unwrapedErr := errors.Unwrap(err)
