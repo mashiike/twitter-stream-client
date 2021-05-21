@@ -21,6 +21,7 @@ const errSample = `{"errors":[{"title": "operational-disconnect","disconnect_typ
 func TestAppRun(t *testing.T) {
 	log.SetFlags(log.Lshortfile)
 	connectCount := 0
+	tweetCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		_, err := io.ReadAll(req.Body)
 		assert.NoError(t, err)
@@ -46,6 +47,7 @@ func TestAppRun(t *testing.T) {
 			flusher.Flush()
 			time.Sleep(20 * time.Millisecond)
 			io.WriteString(w, sampleTweet+"\n")
+			tweetCount++
 			flusher.Flush()
 		}
 		io.WriteString(w, errSample)
@@ -69,6 +71,6 @@ func TestAppRun(t *testing.T) {
 	for _, tweet := range tweets {
 		assert.JSONEq(t, sampleTweet, tweet)
 	}
-	assert.Greater(t, len(tweets), 2)
+	assert.Equal(t, len(tweets), tweetCount)
 	assert.Greater(t, connectCount, 2)
 }

@@ -1,12 +1,9 @@
 package twstclient
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -21,7 +18,7 @@ type App struct {
 	client          *Client
 	workerNum       int
 	params          url.Values
-	output          io.Writer
+	output          *lockedWriter
 	injectCreatedAt bool
 }
 
@@ -37,47 +34,31 @@ func New(config *Config) (*App, error) {
 		client:          c,
 		workerNum:       config.WorkerNum,
 		params:          config.QueryParams,
-		output:          config.Output,
+		output:          newLockedWriter(config.Output),
 		injectCreatedAt: config.InjectCreatedAt,
 	}
 	return app, nil
 }
 
 func (app *App) Run(ctx context.Context) error {
-	inputCh := make(chan string, app.workerNum*2)
-	tweetCh := make(chan string, app.workerNum*2)
-	errCh := make(chan error, app.workerNum*2)
+	waitCh := make(chan chan string, app.workerNum)
 	var wg sync.WaitGroup
+	workerCtx, workerCancel := context.WithCancel(context.Background())
 	for i := 0; i < app.workerNum; i++ {
 		workerID := i
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			log.Printf("[DEBUG] werker_id=%d start\n", workerID)
-			app.worker(inputCh, tweetCh, errCh)
+			app.worker(workerCtx, waitCh)
 			log.Printf("[DEBUG] werker_id=%d end\n", workerID)
 		}()
 	}
-	var rwg sync.WaitGroup
-	rwg.Add(1)
-	go func() {
-		defer rwg.Done()
-		log.Println("[DEBUG] start worker error reporter")
-		app.errorReporter(errCh)
-		log.Println("[DEBUG] end worker error reporter")
-	}()
-	rwg.Add(1)
-	go func() {
-		defer rwg.Done()
-		log.Println("[DEBUG] start tweet reporter")
-		app.tweetReporter(tweetCh)
-		log.Println("[DEBUG] end tweet reporter")
-	}()
 	done := false
 	var err error
 	for !done {
 		log.Println("[INFO] start mainloop")
-		err = app.mainLoop(ctx, inputCh)
+		err = app.mainLoop(ctx, waitCh)
 		log.Println("[INFO] end mainloop")
 		if err != nil {
 			log.Printf("[ERROR] %s", err.Error())
@@ -93,15 +74,13 @@ func (app *App) Run(ctx context.Context) error {
 			time.Sleep(5 * time.Second)
 		}
 	}
-	close(inputCh)
+	workerCancel()
 	wg.Wait()
-	close(tweetCh)
-	close(errCh)
-	rwg.Wait()
+	close(waitCh)
 	return err
 }
 
-func (app *App) mainLoop(ctx context.Context, tweetCh chan<- string) error {
+func (app *App) mainLoop(ctx context.Context, waitCh <-chan chan string) error {
 	respCh, err := app.getStream(ctx)
 	if err != nil {
 		return err
@@ -123,6 +102,7 @@ func (app *App) mainLoop(ctx context.Context, tweetCh chan<- string) error {
 				continue
 			}
 			tweetCount++
+			tweetCh := <-waitCh
 			tweetCh <- resp
 		case <-ticker.C:
 			log.Printf("[INFO] in 5 Minute, HeartbeatCount=%d, TweetCount=%d", heartbeatCount, tweetCount)
@@ -132,69 +112,51 @@ func (app *App) mainLoop(ctx context.Context, tweetCh chan<- string) error {
 	}
 }
 
-func (app *App) errorReporter(errCh <-chan error) {
+func (app *App) worker(ctx context.Context, waitCh chan<- chan string) {
+	encoder := json.NewEncoder(app.output)
+	inputCh := make(chan string)
+	defer func() {
+		close(inputCh)
+	}()
 	for {
-		err, ok := <-errCh
-		if ok {
-			log.Printf("[INFO] %s", err.Error())
-		} else {
+		waitCh <- inputCh
+		select {
+		case <-ctx.Done():
 			return
-		}
-	}
-}
-
-func (app *App) tweetReporter(tweetCh <-chan string) {
-	for {
-		tweet, ok := <-tweetCh
-		if ok {
-			io.WriteString(app.output, tweet)
-		} else {
-			return
-		}
-	}
-}
-
-func (app *App) worker(inputCh <-chan string, tweetCh chan<- string, errCh chan<- error) {
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	for {
-		input, ok := <-inputCh
-		if !ok {
-			return
-		}
-		var data map[string]interface{}
-		decoder := json.NewDecoder(strings.NewReader(input))
-		if err := decoder.Decode(&data); err != nil {
-			errCh <- err
-			continue
-		}
-
-		if _, ok := data["errors"]; ok {
-			var errs struct {
-				Errors []json.RawMessage `json:"errors,omitempty"`
+		case input := <-inputCh:
+			var data map[string]interface{}
+			decoder := json.NewDecoder(strings.NewReader(input))
+			if err := decoder.Decode(&data); err != nil {
+				log.Printf("[ERROR] %s", err.Error())
+				continue
 			}
-			if err := json.NewDecoder(strings.NewReader(input)).Decode(&errs); err != nil {
-				errCh <- err
+
+			if _, ok := data["errors"]; ok {
+				var errs struct {
+					Errors []json.RawMessage `json:"errors,omitempty"`
+				}
+				if err := json.NewDecoder(strings.NewReader(input)).Decode(&errs); err != nil {
+					log.Printf("[ERROR] %s", err.Error())
+				}
+				for _, err := range errs.Errors {
+					log.Printf("[ERROR] %s", err)
+				}
+				continue
 			}
-			for _, err := range errs.Errors {
-				errCh <- fmt.Errorf("%s", string(err))
-			}
-			continue
-		}
-		if app.injectCreatedAt {
-			if tweet, ok := data["data"]; ok {
-				if tweet, ok := tweet.(map[string]interface{}); ok {
-					if createdAt, ok := tweet["created_at"]; ok {
-						data["created_at"] = createdAt
+			if app.injectCreatedAt {
+				if tweet, ok := data["data"]; ok {
+					if tweet, ok := tweet.(map[string]interface{}); ok {
+						if createdAt, ok := tweet["created_at"]; ok {
+							data["created_at"] = createdAt
+						}
 					}
 				}
 			}
+			if err := encoder.Encode(data); err != nil {
+				log.Printf("[ERROR] %s", err)
+				continue
+			}
 		}
-		if err := encoder.Encode(data); err != nil {
-			errCh <- err
-			continue
-		}
-		tweetCh <- buf.String()
 	}
 }
 
