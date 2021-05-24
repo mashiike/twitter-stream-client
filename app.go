@@ -56,10 +56,13 @@ func (app *App) Run(ctx context.Context) error {
 	}
 	done := false
 	var err error
+	waitSeconds := 5
 	for !done {
+		startTime := time.Now()
 		log.Println("[INFO] start mainloop")
 		err = app.mainLoop(ctx, waitCh)
 		log.Println("[INFO] end mainloop")
+		endTime := time.Now()
 		if err != nil {
 			log.Printf("[ERROR] %s", err.Error())
 			done = true
@@ -70,8 +73,17 @@ func (app *App) Run(ctx context.Context) error {
 			done = true
 			continue
 		default:
-			log.Println("[INFO] 5 sec after try restart mainloop")
-			time.Sleep(5 * time.Second)
+			elapsed := endTime.Sub(startTime)
+			if elapsed < 10*time.Minute {
+				waitSeconds *= 2
+				if waitSeconds > 320 {
+					waitSeconds = 320
+				}
+			} else {
+				waitSeconds = 5
+			}
+			log.Printf("[INFO] %d sec after try restart mainloop\n", waitSeconds)
+			time.Sleep(time.Duration(waitSeconds) * time.Second)
 		}
 	}
 	workerCancel()
