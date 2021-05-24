@@ -51,7 +51,7 @@ func (c *Client) GetStream(ctx context.Context, params url.Values) (<-chan strin
 		var err responseError
 		decoder := json.NewDecoder(resp.Body)
 		if err := decoder.Decode(&err); err != nil {
-			log.Printf("[ERROR] response parse failed:%s", err.Error())
+			log.Printf("[ERROR] response parse failed:%s\n", err.Error())
 		}
 		err.StatusCode = resp.StatusCode
 		resp.Body.Close()

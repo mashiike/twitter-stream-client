@@ -129,7 +129,7 @@ func (app *App) worker(ctx context.Context, waitCh chan<- chan string) {
 			var data map[string]interface{}
 			decoder := json.NewDecoder(strings.NewReader(input))
 			if err := decoder.Decode(&data); err != nil {
-				log.Printf("[ERROR] %s", err.Error())
+				log.Printf("[ERROR] %s\n", err.Error())
 				continue
 			}
 
@@ -138,10 +138,10 @@ func (app *App) worker(ctx context.Context, waitCh chan<- chan string) {
 					Errors []json.RawMessage `json:"errors,omitempty"`
 				}
 				if err := json.NewDecoder(strings.NewReader(input)).Decode(&errs); err != nil {
-					log.Printf("[ERROR] %s", err.Error())
+					log.Printf("[ERROR] %s\n", err.Error())
 				}
 				for _, err := range errs.Errors {
-					log.Printf("[ERROR] %s", err)
+					log.Printf("[ERROR] %s\n", err)
 				}
 				continue
 			}
@@ -155,7 +155,7 @@ func (app *App) worker(ctx context.Context, waitCh chan<- chan string) {
 				}
 			}
 			if err := encoder.Encode(data); err != nil {
-				log.Printf("[ERROR] %s", err)
+				log.Printf("[ERROR] %s\n", err)
 				continue
 			}
 		}
